@@ -1,6 +1,7 @@
 import streamlit as st
 
 from patterns.planner_executor.graph import build_graph as build_planner_graph
+from patterns.supervisor_worker.graph import build_graph as build_supervisor_graph
 from patterns.tool_using.graph import build_graph as build_tool_using_graph
 
 
@@ -160,19 +161,37 @@ def get_planner_executor_workflow():
     return build_planner_graph()
 
 
+@st.cache_resource
+def get_supervisor_worker_workflow():
+    return build_supervisor_graph()
+
+
 with st.sidebar:
     st.markdown('<div class="sidebar-brand">Toolroom</div>', unsafe_allow_html=True)
     pattern_label = st.radio(
         "Demonstration",
-        ["Tool-using", "Planner-executor"],
+        ["Tool-using", "Planner-executor", "Supervisor-worker"],
         key="demo_pattern",
     )
     is_planner_executor = pattern_label == "Planner-executor"
-    pattern_key = "planner_executor" if is_planner_executor else "tool_using"
-    messages_key = "planner_messages" if is_planner_executor else "messages"
-    pending_question_key = (
-        "planner_pending_question" if is_planner_executor else "pending_question"
+    is_supervisor_worker = pattern_label == "Supervisor-worker"
+    pattern_key = (
+        "planner_executor"
+        if is_planner_executor
+        else "supervisor_worker"
+        if is_supervisor_worker
+        else "tool_using"
     )
+    messages_key = {
+        "tool_using": "messages",
+        "planner_executor": "planner_messages",
+        "supervisor_worker": "supervisor_messages",
+    }[pattern_key]
+    pending_question_key = {
+        "tool_using": "pending_question",
+        "planner_executor": "planner_pending_question",
+        "supervisor_worker": "supervisor_pending_question",
+    }[pattern_key]
     if messages_key not in st.session_state:
         st.session_state[messages_key] = []
     if pending_question_key not in st.session_state:
@@ -182,14 +201,16 @@ with st.sidebar:
     st.markdown(
         "A step-by-step planning demo."
         if is_planner_executor
+        else "A supervisor routes requests to a specialist."
+        if is_supervisor_worker
         else "A small agent team for questions and calculations."
     )
     st.markdown('<div class="sidebar-kicker">Workflow</div>', unsafe_allow_html=True)
-    workflow_steps = (
-        ["Planner agent", "Executor agent"]
-        if is_planner_executor
-        else ["Reasoning agent", "Math tool", "General fallback"]
-    )
+    workflow_steps = {
+        "tool_using": ["Reasoning agent", "Math tool", "General fallback"],
+        "planner_executor": ["Planner agent", "Executor agent"],
+        "supervisor_worker": ["Supervisor", "Math agent", "Leave-balance agent"],
+    }[pattern_key]
     workflow_html = "".join(
         f'<div class="route-line"><span class="route-dot"></span>{step}</div>'
         for step in workflow_steps
@@ -207,8 +228,12 @@ hero_title = "Plan, then execute." if is_planner_executor else "Reason, then res
 hero_note = (
     "Watch a planner break down a task and an executor work through each step."
     if is_planner_executor
+    else "A supervisor routes each request to a math or leave-balance worker."
+    if is_supervisor_worker
     else "A good answer starts by choosing the right tool."
 )
+if is_supervisor_worker:
+    hero_title = "Route to the right worker."
 st.markdown(f'<div class="hero-title">{hero_title}</div>', unsafe_allow_html=True)
 st.markdown(
     f'<div class="hero-note">{hero_note}</div>',
@@ -216,7 +241,13 @@ st.markdown(
 )
 
 if not active_messages:
-    sample_heading = "Try a task" if is_planner_executor else "Start with a question"
+    sample_heading = (
+        "Try a task"
+        if is_planner_executor
+        else "Try a request"
+        if is_supervisor_worker
+        else "Start with a question"
+    )
     st.markdown(f'<div class="section-label">{sample_heading}</div>', unsafe_allow_html=True)
     examples = (
         [
@@ -225,6 +256,12 @@ if not active_messages:
             "Create a beginner-friendly Python study plan.",
         ]
         if is_planner_executor
+        else [
+            "What is the square of the average of 10 and 5?",
+            "How many leave days does Alice have?",
+            "Check Charlie's remaining PTO.",
+        ]
+        if is_supervisor_worker
         else [
             "What is the square of the average of 10 and 5?",
             "Define artificial intelligence.",
@@ -252,6 +289,18 @@ for message in active_messages:
                     for step in message.get("plan", []):
                         st.markdown(step)
                 st.caption("Planner-executor response")
+            elif message.get("pattern") == "supervisor_worker":
+                with st.expander("Supervisor routing"):
+                    worker_name = {
+                        "math": "Math agent",
+                        "leave": "Leave-balance agent",
+                    }.get(message.get("worker"), "Unknown worker")
+                    st.write(f"Selected worker: {worker_name}")
+                    if message.get("worker") == "math":
+                        st.code(message.get("expression", ""), language="python")
+                    elif message.get("employee_name"):
+                        st.write(f"Employee: {message['employee_name']}")
+                st.caption("Supervisor-worker response")
             elif message.get("route") == "math":
                 with st.expander("Calculation details"):
                     st.code(message["expression"], language="python")
@@ -259,7 +308,13 @@ for message in active_messages:
                 st.caption("General response")
 
 
-input_placeholder = "Describe a task to plan" if is_planner_executor else "Ask a question"
+input_placeholder = (
+    "Describe a task to plan"
+    if is_planner_executor
+    else "Ask about a calculation or leave balance"
+    if is_supervisor_worker
+    else "Ask a question"
+)
 typed_question = st.chat_input(input_placeholder)
 question = st.session_state[pending_question_key] or typed_question
 st.session_state[pending_question_key] = None
@@ -271,6 +326,7 @@ if question:
 
     result = {}
     plan = []
+    worker = ""
     with st.chat_message("assistant"):
         try:
             with st.spinner("Working through it..."):
@@ -279,6 +335,11 @@ if question:
                     plan = result.get("plan", [])
                     answer = str(result.get("output") or "The executor returned no output.")
                     route = "planner_executor"
+                elif is_supervisor_worker:
+                    result = get_supervisor_worker_workflow().invoke({"query": question})
+                    answer = str(result.get("result") or "The selected worker returned no result.")
+                    worker = result.get("worker", "")
+                    route = worker
                 else:
                     result = get_tool_using_workflow().invoke({"question": question})
                     answer = str(
@@ -293,6 +354,18 @@ if question:
                     for step in plan:
                         st.markdown(step)
                 st.caption("Planner-executor response")
+            elif is_supervisor_worker:
+                worker_name = {
+                    "math": "Math agent",
+                    "leave": "Leave-balance agent",
+                }.get(worker, "Unknown worker")
+                with st.expander("Supervisor routing"):
+                    st.write(f"Selected worker: {worker_name}")
+                    if worker == "math":
+                        st.code(result.get("expression", ""), language="python")
+                    elif result.get("employee_name"):
+                        st.write(f"Employee: {result['employee_name']}")
+                st.caption("Supervisor-worker response")
             elif route == "math":
                 with st.expander("Calculation details"):
                     st.code(result.get("expression", ""), language="python")
@@ -310,6 +383,8 @@ if question:
             "route": route,
             "pattern": pattern_key,
             "plan": plan,
+            "worker": worker,
+            "employee_name": result.get("employee_name", ""),
             "expression": result.get("expression", "") if route == "math" else "",
         }
     )
