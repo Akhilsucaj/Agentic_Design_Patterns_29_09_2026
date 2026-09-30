@@ -1,6 +1,7 @@
 import streamlit as st
 
-from patterns.tool_using.graph import build_graph
+from patterns.planner_executor.graph import build_graph as build_planner_graph
+from patterns.tool_using.graph import build_graph as build_tool_using_graph
 
 
 st.set_page_config(
@@ -150,83 +151,149 @@ st.markdown(
 
 
 @st.cache_resource
-def get_workflow():
-    return build_graph()
+def get_tool_using_workflow():
+    return build_tool_using_graph()
 
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "pending_question" not in st.session_state:
-    st.session_state.pending_question = None
+@st.cache_resource
+def get_planner_executor_workflow():
+    return build_planner_graph()
 
 
 with st.sidebar:
     st.markdown('<div class="sidebar-brand">Toolroom</div>', unsafe_allow_html=True)
-    st.markdown("A small agent team for questions and calculations.")
-    st.markdown('<div class="sidebar-kicker">Workflow</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="route-line"><span class="route-dot"></span>Reasoning agent</div>'
-        '<div class="route-line"><span class="route-dot"></span>Math tool</div>'
-        '<div class="route-line"><span class="route-dot"></span>General fallback</div>',
-        unsafe_allow_html=True,
+    pattern_label = st.radio(
+        "Demonstration",
+        ["Tool-using", "Planner-executor"],
+        key="demo_pattern",
     )
+    is_planner_executor = pattern_label == "Planner-executor"
+    pattern_key = "planner_executor" if is_planner_executor else "tool_using"
+    messages_key = "planner_messages" if is_planner_executor else "messages"
+    pending_question_key = (
+        "planner_pending_question" if is_planner_executor else "pending_question"
+    )
+    if messages_key not in st.session_state:
+        st.session_state[messages_key] = []
+    if pending_question_key not in st.session_state:
+        st.session_state[pending_question_key] = None
+
+    active_messages = st.session_state[messages_key]
+    st.markdown(
+        "A step-by-step planning demo."
+        if is_planner_executor
+        else "A small agent team for questions and calculations."
+    )
+    st.markdown('<div class="sidebar-kicker">Workflow</div>', unsafe_allow_html=True)
+    workflow_steps = (
+        ["Planner agent", "Executor agent"]
+        if is_planner_executor
+        else ["Reasoning agent", "Math tool", "General fallback"]
+    )
+    workflow_html = "".join(
+        f'<div class="route-line"><span class="route-dot"></span>{step}</div>'
+        for step in workflow_steps
+    )
+    st.markdown(workflow_html, unsafe_allow_html=True)
     st.markdown('<div class="sidebar-kicker">Session</div>', unsafe_allow_html=True)
-    st.caption(f"{len(st.session_state.messages) // 2} exchanges")
+    st.caption(f"{len(active_messages) // 2} exchanges")
     if st.button("Clear conversation", use_container_width=True):
-        st.session_state.messages = []
+        st.session_state[messages_key] = []
         st.rerun()
 
 
 st.markdown('<div class="wordmark">Toolroom / Agentic assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-title">Reason, then respond.</div>', unsafe_allow_html=True)
+hero_title = "Plan, then execute." if is_planner_executor else "Reason, then respond."
+hero_note = (
+    "Watch a planner break down a task and an executor work through each step."
+    if is_planner_executor
+    else "A good answer starts by choosing the right tool."
+)
+st.markdown(f'<div class="hero-title">{hero_title}</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="hero-note">A good answer starts by choosing the right tool.</div>',
+    f'<div class="hero-note">{hero_note}</div>',
     unsafe_allow_html=True,
 )
 
-if not st.session_state.messages:
-    st.markdown('<div class="section-label">Start with a question</div>', unsafe_allow_html=True)
-    examples = [
-        "What is the square of the average of 10 and 5?",
-        "Define artificial intelligence.",
-        "Why do leaves change color in autumn?",
-    ]
+if not active_messages:
+    sample_heading = "Try a task" if is_planner_executor else "Start with a question"
+    st.markdown(f'<div class="section-label">{sample_heading}</div>', unsafe_allow_html=True)
+    examples = (
+        [
+            "Create a 3-step plan to prepare for a technical interview.",
+            "Plan a small neighborhood garden project.",
+            "Create a beginner-friendly Python study plan.",
+        ]
+        if is_planner_executor
+        else [
+            "What is the square of the average of 10 and 5?",
+            "Define artificial intelligence.",
+            "Why do leaves change color in autumn?",
+        ]
+    )
     columns = st.columns(3)
-    for column, question in zip(columns, examples):
+    for example_index, (column, question) in enumerate(zip(columns, examples)):
         with column:
-            if st.button(question, use_container_width=True):
-                st.session_state.pending_question = question
+            if st.button(
+                question,
+                key=f"{pattern_key}_example_{example_index}",
+                use_container_width=True,
+            ):
+                st.session_state[pending_question_key] = question
                 st.rerun()
 
 
-for message in st.session_state.messages:
+for message in active_messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        if message["role"] == "assistant" and message.get("route") == "math":
-            with st.expander("Calculation details"):
-                st.code(message["expression"], language="python")
-        elif message["role"] == "assistant" and message.get("route") == "general":
-            st.caption("General response")
+        if message["role"] == "assistant":
+            if message.get("pattern") == "planner_executor":
+                with st.expander("Generated plan"):
+                    for step in message.get("plan", []):
+                        st.markdown(step)
+                st.caption("Planner-executor response")
+            elif message.get("route") == "math":
+                with st.expander("Calculation details"):
+                    st.code(message["expression"], language="python")
+            elif message.get("route") == "general":
+                st.caption("General response")
 
 
-typed_question = st.chat_input("Ask a question")
-question = st.session_state.pending_question or typed_question
-st.session_state.pending_question = None
+input_placeholder = "Describe a task to plan" if is_planner_executor else "Ask a question"
+typed_question = st.chat_input(input_placeholder)
+question = st.session_state[pending_question_key] or typed_question
+st.session_state[pending_question_key] = None
 
 if question:
-    st.session_state.messages.append({"role": "user", "content": question})
+    active_messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
 
+    result = {}
+    plan = []
     with st.chat_message("assistant"):
         try:
             with st.spinner("Working through it..."):
-                result = get_workflow().invoke({"question": question})
-            answer = str(result.get("answer") or result.get("result") or "No answer was returned.")
-            route = result.get("route", "general")
+                if is_planner_executor:
+                    result = get_planner_executor_workflow().invoke({"task": question})
+                    plan = result.get("plan", [])
+                    answer = str(result.get("output") or "The executor returned no output.")
+                    route = "planner_executor"
+                else:
+                    result = get_tool_using_workflow().invoke({"question": question})
+                    answer = str(
+                        result.get("answer")
+                        or result.get("result")
+                        or "No answer was returned."
+                    )
+                    route = result.get("route", "general")
             st.markdown(answer)
-            if route == "math":
+            if is_planner_executor:
+                with st.expander("Generated plan"):
+                    for step in plan:
+                        st.markdown(step)
+                st.caption("Planner-executor response")
+            elif route == "math":
                 with st.expander("Calculation details"):
                     st.code(result.get("expression", ""), language="python")
             else:
@@ -236,11 +303,13 @@ if question:
             route = "error"
             st.error(answer)
 
-    st.session_state.messages.append(
+    active_messages.append(
         {
             "role": "assistant",
             "content": answer,
             "route": route,
+            "pattern": pattern_key,
+            "plan": plan,
             "expression": result.get("expression", "") if route == "math" else "",
         }
     )

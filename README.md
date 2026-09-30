@@ -44,7 +44,7 @@ The `.env` file is ignored by Git. Do not commit API keys.
 streamlit run app.py
 ```
 
-The app keeps the conversation in the current browser session, displays the selected response path, and shows the expression for math answers. Use **Clear conversation** in the sidebar to start a fresh session.
+Use the **Demonstration** selector in the sidebar to switch between the Tool-using and Planner-executor patterns. Tool-using mode shows the selected response path and calculation expression; Planner-executor mode shows the generated plan and the executor's combined output. Each mode keeps its own conversation in the current browser session. Use **Clear conversation** to reset the active mode.
 
 ## Run the command-line example
 
