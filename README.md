@@ -44,12 +44,18 @@ The `.env` file is ignored by Git. Do not commit API keys.
 streamlit run app.py
 ```
 
-Use the **Demonstration** selector in the sidebar to switch between the Tool-using, Planner-executor, and Supervisor-worker patterns. Tool-using mode shows the selected response path and calculation expression; Planner-executor mode shows the generated plan and the executor's combined output; Supervisor-worker mode shows which specialist handled the request. Each mode keeps its own conversation in the current browser session. Use **Clear conversation** to reset the active mode.
+Use the **Demonstration** selector in the sidebar to switch between the Tool-using, Planner-executor, Supervisor-worker, and Reflection patterns. Tool-using mode shows the selected response path and calculation expression; Planner-executor mode shows the generated plan and the executor's combined output; Supervisor-worker mode shows which specialist handled the request; Reflection mode shows the final draft and the critic's review status, attempt count, and feedback. Each mode keeps its own conversation in the current browser session. Use **Clear conversation** to reset the active mode.
 
 ## Run the command-line example
 
 ```powershell
 python -m patterns.tool_using.run
+```
+
+Run the Reflection example directly with:
+
+```powershell
+python -m patterns.reflection.run
 ```
 
 ## Project layout

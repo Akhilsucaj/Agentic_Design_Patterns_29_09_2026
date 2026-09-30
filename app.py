@@ -1,6 +1,7 @@
 import streamlit as st
 
 from patterns.planner_executor.graph import build_graph as build_planner_graph
+from patterns.reflection.graph import build_graph as build_reflection_graph
 from patterns.supervisor_worker.graph import build_graph as build_supervisor_graph
 from patterns.tool_using.graph import build_graph as build_tool_using_graph
 
@@ -166,31 +167,41 @@ def get_supervisor_worker_workflow():
     return build_supervisor_graph()
 
 
+@st.cache_resource
+def get_reflection_workflow():
+    return build_reflection_graph()
+
+
 with st.sidebar:
     st.markdown('<div class="sidebar-brand">Toolroom</div>', unsafe_allow_html=True)
     pattern_label = st.radio(
         "Demonstration",
-        ["Tool-using", "Planner-executor", "Supervisor-worker"],
+        ["Tool-using", "Planner-executor", "Supervisor-worker", "Reflection"],
         key="demo_pattern",
     )
     is_planner_executor = pattern_label == "Planner-executor"
     is_supervisor_worker = pattern_label == "Supervisor-worker"
+    is_reflection = pattern_label == "Reflection"
     pattern_key = (
         "planner_executor"
         if is_planner_executor
         else "supervisor_worker"
         if is_supervisor_worker
+        else "reflection"
+        if is_reflection
         else "tool_using"
     )
     messages_key = {
         "tool_using": "messages",
         "planner_executor": "planner_messages",
         "supervisor_worker": "supervisor_messages",
+        "reflection": "reflection_messages",
     }[pattern_key]
     pending_question_key = {
         "tool_using": "pending_question",
         "planner_executor": "planner_pending_question",
         "supervisor_worker": "supervisor_pending_question",
+        "reflection": "reflection_pending_question",
     }[pattern_key]
     if messages_key not in st.session_state:
         st.session_state[messages_key] = []
@@ -203,6 +214,8 @@ with st.sidebar:
         if is_planner_executor
         else "A supervisor routes requests to a specialist."
         if is_supervisor_worker
+        else "A generator drafts; a critic reviews and requests revisions."
+        if is_reflection
         else "A small agent team for questions and calculations."
     )
     st.markdown('<div class="sidebar-kicker">Workflow</div>', unsafe_allow_html=True)
@@ -215,6 +228,7 @@ with st.sidebar:
             "Leave-balance agent",
             "General agent",
         ],
+        "reflection": ["Generator agent", "Critic agent", "Revision loop (up to 3 drafts)"],
     }[pattern_key]
     workflow_html = "".join(
         f'<div class="route-line"><span class="route-dot"></span>{step}</div>'
@@ -235,10 +249,14 @@ hero_note = (
     if is_planner_executor
     else "A supervisor routes calculations, leave lookups, and general questions to a specialist."
     if is_supervisor_worker
+    else "See a draft reviewed against the task, then revised using critic feedback."
+    if is_reflection
     else "A good answer starts by choosing the right tool."
 )
 if is_supervisor_worker:
     hero_title = "Route to the right worker."
+elif is_reflection:
+    hero_title = "Draft, review, improve."
 st.markdown(f'<div class="hero-title">{hero_title}</div>', unsafe_allow_html=True)
 st.markdown(
     f'<div class="hero-note">{hero_note}</div>',
@@ -251,6 +269,8 @@ if not active_messages:
         if is_planner_executor
         else "Try a request"
         if is_supervisor_worker
+        else "Try a prompt"
+        if is_reflection
         else "Start with a question"
     )
     st.markdown(f'<div class="section-label">{sample_heading}</div>', unsafe_allow_html=True)
@@ -267,6 +287,12 @@ if not active_messages:
             "Define artificial intelligence.",
         ]
         if is_supervisor_worker
+        else [
+            "Explain why Python is good for beginners in exactly 2 sentences. Mention simple syntax, community support, and libraries.",
+            "In exactly 2 sentences, explain why Python suits beginners and mention its readable syntax, community, and libraries.",
+            "Write exactly 2 concise sentences about Python for beginners, including simple syntax and available libraries.",
+        ]
+        if is_reflection
         else [
             "What is the square of the average of 10 and 5?",
             "Define artificial intelligence.",
@@ -307,6 +333,12 @@ for message in active_messages:
                     elif message.get("employee_name"):
                         st.write(f"Employee: {message['employee_name']}")
                 st.caption("Supervisor-worker response")
+            elif message.get("pattern") == "reflection":
+                with st.expander("Review cycle"):
+                    st.write(f"Status: {message.get('status', 'unknown')}")
+                    st.write(f"Drafts: {message.get('attempts', 0)} of 3")
+                    st.write(f"Critic feedback: {message.get('feedback', '')}")
+                st.caption("Generator reviewed by critic")
             elif message.get("route") == "math":
                 with st.expander("Calculation details"):
                     st.code(message["expression"], language="python")
@@ -319,6 +351,8 @@ input_placeholder = (
     if is_planner_executor
     else "Ask about a calculation, leave balance, or another topic"
     if is_supervisor_worker
+    else "Describe the answer you want reviewed"
+    if is_reflection
     else "Ask a question"
 )
 typed_question = st.chat_input(input_placeholder)
@@ -346,6 +380,21 @@ if question:
                     answer = str(result.get("result") or "The selected worker returned no result.")
                     worker = result.get("worker", "")
                     route = worker
+                elif is_reflection:
+                    result = get_reflection_workflow().invoke(
+                        {
+                            "task": question,
+                            "attempts": 0,
+                            "needs_revision": True,
+                            "status": "pending",
+                        }
+                    )
+                    answer = str(
+                        result.get("final_answer")
+                        or result.get("draft")
+                        or "The reflection workflow returned no answer."
+                    )
+                    route = "reflection"
                 else:
                     result = get_tool_using_workflow().invoke({"question": question})
                     answer = str(
@@ -373,6 +422,12 @@ if question:
                     elif result.get("employee_name"):
                         st.write(f"Employee: {result['employee_name']}")
                 st.caption("Supervisor-worker response")
+            elif is_reflection:
+                with st.expander("Review cycle"):
+                    st.write(f"Status: {result.get('status', 'unknown')}")
+                    st.write(f"Drafts: {result.get('attempts', 0)} of 3")
+                    st.write(f"Critic feedback: {result.get('feedback', '')}")
+                st.caption("Generator reviewed by critic")
             elif route == "math":
                 with st.expander("Calculation details"):
                     st.code(result.get("expression", ""), language="python")
@@ -392,6 +447,9 @@ if question:
             "plan": plan,
             "worker": worker,
             "employee_name": result.get("employee_name", ""),
+            "status": result.get("status", ""),
+            "attempts": result.get("attempts", 0),
+            "feedback": result.get("feedback", ""),
             "expression": result.get("expression", "") if route == "math" else "",
         }
     )
