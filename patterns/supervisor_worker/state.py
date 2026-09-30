@@ -1,9 +1,9 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class SupervisorWorkerState(TypedDict, total=False):
     query: str
-    worker: str
+    worker: Literal["math", "leave", "general"]
     expression: str
     result: str
     employee_name: str

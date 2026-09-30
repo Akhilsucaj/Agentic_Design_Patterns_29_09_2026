@@ -1,3 +1,5 @@
+import re
+
 from config.llm import get_llm
 from tools.calculator import calculator
 from tools.leaves_db import get_leave_balance
@@ -15,20 +17,47 @@ def supervisor(state: SupervisorWorkerState):
     Return ONLY one word:
     - math
     - leave
+    - general
 
     Use:
     - math → calculations, percentages, averages, totals
     - leave → leave balance, vacation, sick leave, PTO
+    - general → definitions, explanations, factual questions, and anything else
+
+    Examples:
+    Request: What is the square of the average of 10 and 5?
+    Worker: math
+    Request: How many leave days does Alice have?
+    Worker: leave
+    Request: Define artificial intelligence.
+    Worker: general
+
+    When unsure, choose general. Do not choose math unless the request clearly
+    asks for a calculation.
 
     Request: {query}
     """
 
     worker = llm.invoke(prompt).content.strip().lower()
 
-    if "leave" in worker:
-        worker = "leave"
-    else:
-        worker = "math"
+    has_math_intent = bool(
+        re.search(
+            r"\b(calculate|compute|sum|add|subtract|difference|multiply|times|product|divide|average|mean|square|cube|percent|percentage|total|evaluate)\b",
+            query,
+            re.IGNORECASE,
+        )
+        or re.search(r"\d\s*[+*/%^-]\s*\d", query)
+    )
+    has_leave_intent = bool(
+        re.search(r"\b(leave|pto|vacation|sick|time off)\b", query, re.IGNORECASE)
+    )
+
+    if worker not in {"math", "leave", "general"}:
+        worker = "general"
+    elif worker == "math" and not has_math_intent:
+        worker = "general"
+    elif worker == "leave" and not has_leave_intent:
+        worker = "general"
 
     print(f"[Supervisor] Worker selected: {worker}")
 
@@ -83,3 +112,18 @@ def leaves_balance(state: SupervisorWorkerState):
         "leave_balance": balance,
         "result": balance
     }
+
+
+def general_agent(state: SupervisorWorkerState):
+    prompt = f"""
+    Answer the user's question clearly and helpfully.
+    If it is ambiguous, briefly mention the assumption you are making.
+
+    Question: {state['query']}
+    """
+
+    answer = llm.invoke(prompt).content.strip()
+
+    print("[General Agent] Answer generated")
+
+    return {"result": answer}

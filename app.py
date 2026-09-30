@@ -209,7 +209,12 @@ with st.sidebar:
     workflow_steps = {
         "tool_using": ["Reasoning agent", "Math tool", "General fallback"],
         "planner_executor": ["Planner agent", "Executor agent"],
-        "supervisor_worker": ["Supervisor", "Math agent", "Leave-balance agent"],
+        "supervisor_worker": [
+            "Supervisor",
+            "Math agent",
+            "Leave-balance agent",
+            "General agent",
+        ],
     }[pattern_key]
     workflow_html = "".join(
         f'<div class="route-line"><span class="route-dot"></span>{step}</div>'
@@ -228,7 +233,7 @@ hero_title = "Plan, then execute." if is_planner_executor else "Reason, then res
 hero_note = (
     "Watch a planner break down a task and an executor work through each step."
     if is_planner_executor
-    else "A supervisor routes each request to a math or leave-balance worker."
+    else "A supervisor routes calculations, leave lookups, and general questions to a specialist."
     if is_supervisor_worker
     else "A good answer starts by choosing the right tool."
 )
@@ -259,7 +264,7 @@ if not active_messages:
         else [
             "What is the square of the average of 10 and 5?",
             "How many leave days does Alice have?",
-            "Check Charlie's remaining PTO.",
+            "Define artificial intelligence.",
         ]
         if is_supervisor_worker
         else [
@@ -294,6 +299,7 @@ for message in active_messages:
                     worker_name = {
                         "math": "Math agent",
                         "leave": "Leave-balance agent",
+                        "general": "General agent",
                     }.get(message.get("worker"), "Unknown worker")
                     st.write(f"Selected worker: {worker_name}")
                     if message.get("worker") == "math":
@@ -311,7 +317,7 @@ for message in active_messages:
 input_placeholder = (
     "Describe a task to plan"
     if is_planner_executor
-    else "Ask about a calculation or leave balance"
+    else "Ask about a calculation, leave balance, or another topic"
     if is_supervisor_worker
     else "Ask a question"
 )
@@ -358,6 +364,7 @@ if question:
                 worker_name = {
                     "math": "Math agent",
                     "leave": "Leave-balance agent",
+                    "general": "General agent",
                 }.get(worker, "Unknown worker")
                 with st.expander("Supervisor routing"):
                     st.write(f"Selected worker: {worker_name}")
